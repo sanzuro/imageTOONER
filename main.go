@@ -1,10 +1,11 @@
-package main
+ package main
 
 import (
 	"fmt"
 	"image"
 	"image/color"
 	"image/png"
+	"math"
 	"os"
 )
 
@@ -66,8 +67,7 @@ func main() {
 	nfile, err := os.Create("newPhoto.png")
 	defer nfile.Close()
 	err = png.Encode(nfile, nimg)
-
-	// f , _ := os.Create("new.png")
+ 
 	f := image.NewRGBA(rect)
 
 	for y := 0; y < rect.Dy(); y++ {
@@ -80,9 +80,11 @@ func main() {
 				G: uint8(-g1 + g2),
 				B: uint8(-b1 + b2),
 				A: 255,
-			})
-			h, j := hsv(f.At(x, y))
-			fmt.Printf("%v %v \n ", h, j)
+			}) 
+			R1, G1, B1, _ := f.At(x, y).RGBA()
+			h, j, m := toHSL(f.At(x, y))
+			q, qt, qtt := toRGB(h, j, m)
+			fmt.Printf(" { %v %v %v }      , { %v %v %v } ,  { %v %v %v } \n ", uint8(R1), uint8(G1), uint8(B1), h, j, m, q*255, qt*255, 255*qtt)
 		}
 	}
 	k, _ := os.Create("n.png")
@@ -91,55 +93,88 @@ func main() {
 
 }
 
-func hsv(k color.Color) (int32, uint8, float32) {
-	r1, g1, b1, _ := k.RGBA()
-	r, g, b := uint8(r1), uint8(g1), uint8(b1)
-	var max, min, kolor uint8
-	if r > b {
-		if r > g {
-			max = r
-			kolor = 0
-		} else {
-			max = g
-			kolor = 1
-		}
+func toHSL(c color.Color) (float64, float64, float64) {
+	var h, s, l float64
+	R1, G1, B1, _ := c.RGBA()
+	r := float64(uint8(R1)) / 255
+	g := float64(uint8(G1)) / 255
+	b := float64(uint8(B1)) / 255
+
+	max := math.Max(math.Max(r, g), b)
+	min := math.Min(math.Min(r, g), b)
+
+	l = (max + min) / 2
+
+	delta := max - min
+	if delta == 0 {
+
+		return 0, 0, l
+	}
+
+	if l < 0.5 {
+		s = delta / (max + min)
 	} else {
-		if b > g {
-			max = b
-			kolor = 2
-		} else {
-			max = g
-			kolor = 1
-		}
+		s = delta / (2 - max - min)
 	}
 
-	if r < b {
-		if r < g {
-			min = r
+	r2 := (((max - r) / 6) + (delta / 2)) / delta
+	g2 := (((max - g) / 6) + (delta / 2)) / delta
+	b2 := (((max - b) / 6) + (delta / 2)) / delta
+	switch {
+	case r == max:
+		h = b2 - g2
+	case g == max:
+		h = (1.0 / 3.0) + r2 - b2
+	case b == max:
+		h = (2.0 / 3.0) + g2 - r2
+	}
 
-		} else {
-			min = g
-		}
+	switch {
+	case h < 0:
+		h++
+	case h > 1:
+		h--
+	}
+
+	return h, s, l
+}
+
+func toRGB(h, s, l float64) (float64, float64, float64) {
+
+	if s == 0 {
+		return l, l, l
+	}
+
+	var v1, v2 float64
+	if l < 0.5 {
+		v2 = l * (1 + s)
 	} else {
-		if b < g {
-			min = b
-		} else {
-			min = g
-		}
-	}
-	if max-min == 0 {
-		return int32(0), uint8(0), unit32(0)
-	}
-	if kolor == 0 {
-		return int32(((g-b)/(max-min) + 0) * 60), uint8((max + min) / 2), float32(())
-	}
-	if kolor == 1 {
-		return int32(((r-b)/(max-min) + 2) * 60), uint8((max - min) / 2)
-	}
-	if kolor == 2 {
-		return int32(((r-g)/(max-min) + 4) * 60), uint8((max - min) / 2)
+		v2 = (l + s) - (s * l)
 	}
 
-	return int32(0), uint8(0)
+	v1 = 2*l - v2
 
+	r := hueToRGB(v1, v2, h+(1.0/3.0))
+	g := hueToRGB(v1, v2, h)
+	b := hueToRGB(v1, v2, h-(1.0/3.0))
+
+	return r, g, b
+}
+
+func hueToRGB(v1, v2, h float64) float64 {
+	if h < 0 {
+		h++
+	}
+	if h > 1 {
+		h--
+	}
+	switch {
+	case 6*h < 1:
+		return (v1 + (v2-v1)*6*h)
+	case 2*h < 1:
+		return v2
+	case 3*h < 2:
+		return v1 + (v2-v1)*((2.0/3.0)-h)*6
+	}
+	return v1
 }
